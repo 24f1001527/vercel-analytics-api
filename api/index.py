@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import json
-import statistics
+import numpy as np
+import os
 
 app = FastAPI()
 
-# Enable CORS for POST from any origin
+# 🔷 Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,38 +14,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load telemetry data once
-with open("telemetry.json", "r") as f:
-    DATA = json.load(f)
+# 🔷 Load telemetry file
+BASE_DIR = os.path.dirname(__file__)
+DATA_FILE = os.path.join(BASE_DIR, "telemetry.json")
 
-class RequestBody(BaseModel):
-    regions: list[str]
-    threshold_ms: float
+with open(DATA_FILE, "r") as f:
+    telemetry = json.load(f)
 
+# 🔷 POST endpoint
 @app.post("/analytics")
-def analytics(body: RequestBody):
-    result = {}
+def analytics(payload: dict):
+    regions = payload["regions"]
+    threshold = payload["threshold_ms"]
 
-    for region in body.regions:
-        records = [r for r in DATA if r["region"] == region]
+    response = {}
+
+    for region in regions:
+        records = [r for r in telemetry if r["region"] == region]
 
         latencies = [r["latency_ms"] for r in records]
         uptimes = [r["uptime_pct"] for r in records]
 
-        if not latencies:
-            continue
-
-        avg_latency = statistics.mean(latencies)
-        p95_latency = statistics.quantiles(latencies, n=20)[18]
-        avg_uptime = statistics.mean(uptimes)
-        breaches = sum(1 for l in latencies if l > body.threshold_ms)
-
-        result[region] = {
-            "avg_latency": avg_latency,
-            "p95_latency": p95_latency,
-            "avg_uptime": avg_uptime,
-            "breaches": breaches
+        response[region] = {
+            "avg_latency": float(np.mean(latencies)),
+            "p95_latency": float(np.percentile(latencies, 95)),
+            "avg_uptime": float(np.mean(uptimes)),
+            "breaches": sum(l > threshold for l in latencies)
         }
 
-    return result
+    return response
 
