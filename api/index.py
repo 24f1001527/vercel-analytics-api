@@ -1,64 +1,40 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import numpy as np
-from pathlib import Path
 
 app = FastAPI()
 
-# --------------------------------------------------
-# ✅ CORS: allow requests from ANY origin (grader-safe)
-# --------------------------------------------------
+# Enable CORS for ALL origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["*"],     # allow GET, POST, OPTIONS
+    allow_methods=["POST"],
     allow_headers=["*"],
-    allow_credentials=False,
 )
 
-# --------------------------------------------------
-# ✅ Load telemetry.json from REPO ROOT
-# Structure:
-#   /telemetry.json
-#   /api/index.py
-# --------------------------------------------------
-DATA_FILE = Path(__file__).resolve().parents[1] / "telemetry.json"
-telemetry = json.loads(DATA_FILE.read_text())
+# Load telemetry data
+with open("q-vercel-latency.json") as f:
+    data = json.load(f)
 
-# --------------------------------------------------
-# ✅ GET /analytics
-# (Needed ONLY to satisfy strict CORS checkers)
-# --------------------------------------------------
-@app.get("/analytics")
-def analytics_get():
-    return {
-        "message": "Use POST on this endpoint with JSON body."
-    }
-
-# --------------------------------------------------
-# ✅ POST /analytics  (MAIN ENDPOINT)
-# --------------------------------------------------
 @app.post("/analytics")
-async def analytics_post(request: Request):
-    payload = await request.json()
-
-    regions = payload.get("regions", [])
-    threshold = payload.get("threshold_ms", 0)
+def analytics(payload: dict):
+    regions = payload["regions"]
+    threshold = payload["threshold_ms"]
 
     result = {}
 
     for region in regions:
-        records = [r for r in telemetry if r["region"] == region]
+        records = [r for r in data if r["region"] == region]
 
         latencies = [r["latency_ms"] for r in records]
         uptimes = [r["uptime_pct"] for r in records]
 
         result[region] = {
-            "avg_latency": float(np.mean(latencies)),
-            "p95_latency": float(np.percentile(latencies, 95)),
-            "avg_uptime": float(np.mean(uptimes)),
-            "breaches": sum(l > threshold for l in latencies),
+            "avg_latency": round(float(np.mean(latencies)), 2),
+            "p95_latency": round(float(np.percentile(latencies, 95)), 2),
+            "avg_uptime": round(float(np.mean(uptimes)), 2),
+            "breaches": sum(l > threshold for l in latencies)
         }
 
     return result
