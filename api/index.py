@@ -1,8 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import numpy as np
-import os
+from pathlib import Path
 
 app = FastAPI()
 
@@ -14,20 +14,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔷 Load telemetry file
-BASE_DIR = os.path.dirname(__file__)
-DATA_FILE = os.path.join(BASE_DIR, "telemetry.json")
+# 🔷 Load telemetry.json from REPO ROOT
+# __file__ = /var/task/api/index.py
+# parents[1] = /var/task (repo root)
+DATA_FILE = Path(__file__).resolve().parents[1] / "telemetry.json"
 
-with open(DATA_FILE, "r") as f:
-    telemetry = json.load(f)
+telemetry = json.loads(DATA_FILE.read_text())
 
-# 🔷 POST endpoint
 @app.post("/analytics")
-def analytics(payload: dict):
-    regions = payload["regions"]
-    threshold = payload["threshold_ms"]
+async def analytics(request: Request):
+    payload = await request.json()
+    regions = payload.get("regions", [])
+    threshold = payload.get("threshold_ms", 0)
 
-    response = {}
+    result = {}
 
     for region in regions:
         records = [r for r in telemetry if r["region"] == region]
@@ -35,12 +35,12 @@ def analytics(payload: dict):
         latencies = [r["latency_ms"] for r in records]
         uptimes = [r["uptime_pct"] for r in records]
 
-        response[region] = {
+        result[region] = {
             "avg_latency": float(np.mean(latencies)),
             "p95_latency": float(np.percentile(latencies, 95)),
             "avg_uptime": float(np.mean(uptimes)),
             "breaches": sum(l > threshold for l in latencies)
         }
 
-    return response
+    return result
 
